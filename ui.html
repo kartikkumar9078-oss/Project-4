@@ -252,8 +252,14 @@
     <div class="map-wrap" id="mapWrap">
       <div id="map"></div>
 
-      <!-- Traffic badge -->
-      <div class="hud traffic-badge tb-normal" id="trafficBadge" style="top:10px;left:14px;">🟡 NORMAL TRAFFIC</div>
+      <!-- Traffic badge / Time Mode -->
+      <select id="timeMode" class="hud traffic-badge tb-normal" style="top:10px;left:14px; appearance:auto; cursor:pointer; pointer-events:all; padding-right:12px; outline:none;" onchange="onTimeModeChange()">
+        <option value="auto">⏱ Auto (System Time)</option>
+        <option value="morning">🌅 Morning (8 AM - Rush Hour)</option>
+        <option value="afternoon">☀️ Afternoon (2 PM - Normal)</option>
+        <option value="evening">🌇 Evening (6 PM - Rush Hour)</option>
+        <option value="night">🌙 Night (2 AM - Clear)</option>
+      </select>
 
       <!-- Compass -->
       <div class="hud compass-wrap">
@@ -284,6 +290,41 @@
       </div>
     </div>
 
+    <!-- Traffic Analysis Section -->
+    <div class="analysis-wrap" id="analysisWrap" style="display:none; padding: 16px; border-bottom: 1px solid var(--border); background:#ffffff; flex-shrink: 0;">
+      <div class="ph" style="margin: -16px -16px 16px -16px; position: relative;">ROUTE TRAFFIC ANALYSIS</div>
+      <div style="display: flex; gap: 24px; align-items: center;">
+        <div style="flex: 1;">
+          <table style="width:100%; border-collapse:collapse; font-size:13px; font-family:var(--body);">
+            <thead>
+              <tr>
+                <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border); color:var(--dim); font-family:var(--head); font-size:11px; text-transform:uppercase;">Condition</th>
+                <th style="text-align:right; padding:8px; border-bottom:1px solid var(--border); color:var(--dim); font-family:var(--head); font-size:11px; text-transform:uppercase;">Est. Time (min)</th>
+              </tr>
+            </thead>
+            <tbody id="traffic-tbody">
+            </tbody>
+          </table>
+        </div>
+        <div style="flex: 1.5; position:relative; height: 160px;">
+          <canvas id="traffic-chart"></canvas>
+        </div>
+        <div style="flex: 1;">
+          <table style="width:100%; border-collapse:collapse; font-size:13px; font-family:var(--body);">
+            <thead>
+              <tr>
+                <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border); color:var(--dim); font-family:var(--head); font-size:11px; text-transform:uppercase;">Route Option</th>
+                <th style="text-align:right; padding:8px; border-bottom:1px solid var(--border); color:var(--dim); font-family:var(--head); font-size:11px; text-transform:uppercase;">Extra Time</th>
+              </tr>
+            </thead>
+            <tbody id="routes-tbody">
+              <tr><td colspan="2" style="padding:8px; color:var(--dim); text-align:center;">Calculating...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div class="log-wrap">
       <div class="ph">INCIDENT LOG</div>
       <div id="log-body"><div class="log-empty">No incidents recorded.</div></div>
@@ -310,6 +351,7 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 const BASE = 'http://localhost:8080';
 
@@ -463,9 +505,26 @@ function updateMapHighlights() {
     
     routingControl.on('routesfound', function(e) {
       const routes = e.routes;
-      if (routes && routes.length > 0 && window.lastDispatchedDriver) {
-        animateAmbulance(routes[0].coordinates, window.lastDispatchedDriver);
-        window.lastDispatchedDriver = null;
+      if (routes && routes.length > 0) {
+        const bestTime = routes[0].summary.totalTime / 60;
+        let tbodyHtml = '';
+        routes.forEach((route, idx) => {
+          const timeMin = route.summary.totalTime / 60;
+          const extraTime = timeMin - bestTime;
+          
+          let name = idx === 0 ? 'Primary Route' : 'Alternative ' + idx;
+          let extraStr = idx === 0 ? '<span style="color:var(--green)">Best</span>' : '+' + extraTime.toFixed(1) + ' min';
+          let colorStyle = idx === 0 ? 'color:var(--accent); font-weight:600;' : 'color:var(--dim);';
+          
+          tbodyHtml += `<tr><td style="padding:8px; border-bottom:1px solid var(--border); ${colorStyle}">◉ ${name}</td><td style="padding:8px; border-bottom:1px solid var(--border); text-align:right; font-family:var(--mono); font-weight:600;">${extraStr}</td></tr>`;
+        });
+        const rbody = document.getElementById('routes-tbody');
+        if (rbody) rbody.innerHTML = tbodyHtml;
+
+        if (window.lastDispatchedDriver) {
+          animateAmbulance(routes[0].coordinates, window.lastDispatchedDriver);
+          window.lastDispatchedDriver = null;
+        }
       }
     });
   } else {
@@ -521,20 +580,38 @@ function animateAmbulance(coords, driverName) {
   step();
 }
 
+// get simulated hour based on dropdown
+function getSimulatedHour() {
+  const mode = document.getElementById('timeMode').value;
+  if (mode === 'morning') return 9; // Rush hour
+  if (mode === 'afternoon') return 14; // Normal
+  if (mode === 'evening') return 18; // Rush hour
+  if (mode === 'night') return 2; // Night
+  return new Date().getHours();
+}
+
 // update traffic status
 function updateTraffic(){
-  const h=new Date().getHours(), b=document.getElementById('trafficBadge');
+  const h=getSimulatedHour(), b=document.getElementById('timeMode');
   if((h>=8&&h<=10)||(h>=17&&h<=19)){
-    b.className='hud traffic-badge tb-rush'; b.textContent='🔴 RUSH HOUR — 3× DELAY';
+    b.className='hud traffic-badge tb-rush';
   } else if(h>=22||h<=5){
-    b.className='hud traffic-badge tb-night'; b.textContent='🟢 NIGHT — 0.8× SPEED';
+    b.className='hud traffic-badge tb-night';
   } else {
-    b.className='hud traffic-badge tb-normal'; b.textContent='🟡 NORMAL TRAFFIC';
+    b.className='hud traffic-badge tb-normal';
+  }
+}
+
+function onTimeModeChange() {
+  updateTraffic();
+  // if there's an active route preview, refresh it
+  if (document.getElementById('routePreview').classList.contains('show')) {
+      previewRoute();
   }
 }
 
 function trafficFactor(){
-  const h=new Date().getHours();
+  const h=getSimulatedHour();
   if((h>=8&&h<=10)||(h>=17&&h<=19)) return 3.0;
   if(h>=22||h<=5) return 0.8;
   return 1.0;
@@ -556,6 +633,7 @@ function onSrcChange(){
   document.getElementById('routeDest').value='';
   document.getElementById('routePreview').classList.remove('show');
   hideETA(); stopAnim();
+  hideTrafficAnalysis();
 }
 
 function previewRoute(){
@@ -563,8 +641,11 @@ function previewRoute(){
   if(!val){
     activeRoute=[]; currentDst=-1;
     document.getElementById('routePreview').classList.remove('show');
-    hideETA(); stopAnim(); return;
+    hideETA(); stopAnim(); hideTrafficAnalysis(); return;
   }
+  const el = document.getElementById('routes-tbody');
+  if (el) el.innerHTML = '<tr><td colspan="2" style="padding:8px; color:var(--dim); text-align:center;">Calculating...</td></tr>';
+  
   const dst=parseInt(val);
   currentDst=dst;
   const path=getPath(currentSrc,dst);
@@ -584,6 +665,7 @@ function previewRoute(){
 
   showETA(tt,path.length-1);
   startAnim();
+  updateTrafficAnalysis(baseDist);
 }
 
 // core dispatch
@@ -603,9 +685,13 @@ async function doDispatch(){
   const btn=document.getElementById('dispatchBtn');
   btn.disabled=true; btn.textContent='⏳ PROCESSING…';
   try{
+    const el = document.getElementById('routes-tbody');
+    if (el) el.innerHTML = '<tr><td colspan="2" style="padding:8px; color:var(--dim); text-align:center;">Calculating...</td></tr>';
+    
+    const hour = getSimulatedHour();
     const res=await fetch(BASE+'/api/dispatch',{
       method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message:msg,node})
+      body:JSON.stringify({message:msg,node,hour})
     });
     const data=await res.json();
     
@@ -632,6 +718,9 @@ async function doDispatch(){
     currentSrc=node; currentDst=activeRoute[activeRoute.length-1]??-1;
     if(data.travelTime>0) showETA(data.travelTime, activeRoute.length-1);
     startAnim();
+    if(activeRoute.length > 1) {
+       updateTrafficAnalysis((activeRoute.length - 1) * 2);
+    }
     refreshFleet(); refreshLog();
     toast('Emergency #'+data.id+' dispatched.');
   } catch(e){
@@ -736,6 +825,71 @@ async function refreshLog(){
 
 async function resetFleet(){
   try{ await fetch(BASE+'/api/reset',{method:'POST'}); await refreshFleet(); toast('Fleet reset.'); } catch(e){}
+}
+
+// Traffic Analysis Graph logic
+let trafficChart = null;
+function updateTrafficAnalysis(baseDist) {
+  const normalTime = baseDist * 1.0;
+  const heavyTime = baseDist * 3.0;
+  const disasterTime = baseDist * 5.0;
+  
+  document.getElementById('analysisWrap').style.display = 'block';
+  
+  document.getElementById('traffic-tbody').innerHTML = `
+    <tr><td style="padding:8px; border-bottom:1px solid var(--border);">🟡 Normal Traffic (1×)</td><td style="padding:8px; border-bottom:1px solid var(--border); text-align:right; font-family:var(--mono); font-weight:600;">${normalTime.toFixed(1)}</td></tr>
+    <tr><td style="padding:8px; border-bottom:1px solid var(--border);">🔴 Heavy Traffic (3×)</td><td style="padding:8px; border-bottom:1px solid var(--border); text-align:right; font-family:var(--mono); font-weight:600;">${heavyTime.toFixed(1)}</td></tr>
+    <tr><td style="padding:8px; border-bottom:1px solid var(--border);">⚫ Natural Disaster (5×)</td><td style="padding:8px; border-bottom:1px solid var(--border); text-align:right; font-family:var(--mono); font-weight:600;">${disasterTime.toFixed(1)}</td></tr>
+  `;
+
+  const ctx = document.getElementById('traffic-chart').getContext('2d');
+  if (trafficChart) {
+    trafficChart.data.datasets[0].data = [normalTime, heavyTime, disasterTime];
+    trafficChart.update();
+  } else {
+    trafficChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: ['Normal', 'Heavy', 'Disaster'],
+        datasets: [{
+          label: 'Estimated Time (min)',
+          data: [normalTime, heavyTime, disasterTime],
+          backgroundColor: [
+            'rgba(37, 99, 235, 0.6)',
+            'rgba(239, 68, 68, 0.6)',
+            'rgba(15, 23, 42, 0.6)'
+          ],
+          borderColor: [
+            'rgb(37, 99, 235)',
+            'rgb(239, 68, 68)',
+            'rgb(15, 23, 42)'
+          ],
+          borderWidth: 1,
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Minutes'
+            }
+          }
+        },
+        plugins: {
+          legend: { display: false }
+        }
+      }
+    });
+  }
+}
+
+function hideTrafficAnalysis() {
+  document.getElementById('analysisWrap').style.display = 'none';
 }
 
 // init logic

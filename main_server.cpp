@@ -112,7 +112,7 @@ string escapeJson(const string& s) {
 }
 
 // Core Logic
-string processEmergency(const string& rawMsg, int srcNode) {
+string processEmergency(const string& rawMsg, int srcNode, int hourOverride = -1) {
     // Preprocess
     string cleaned = preprocessMessage(rawMsg);
 
@@ -138,7 +138,7 @@ string processEmergency(const string& rawMsg, int srcNode) {
     for (auto& k : found) kwStr += (kwStr.empty()?"":", ") + k;
 
     // Route calc
-    int hour = getCurrentHour();
+    int hour = (hourOverride == -1) ? getCurrentHour() : hourOverride;
     pair<vector<double>, vector<int>> dijkResult = cityGraph.dijkstra(srcNode, hour);
     vector<double>& dists   = dijkResult.first;
     vector<int>&    parents = dijkResult.second;
@@ -309,12 +309,14 @@ void handleClient(SOCKET clientSock) {
         string body = readBody(request);
         string msg = unescape(getParam(body, "message"));
         string nodeStr = getParam(body, "node");
+        string hourStr = getParam(body, "hour");
         int node = nodeStr.empty() ? 0 : stoi(nodeStr);
+        int hour = hourStr.empty() ? -1 : stoi(hourStr);
         if (msg.empty()) {
             responseBody = "{\"error\":\"Empty message\"}";
             status = 400;
         } else {
-            responseBody = processEmergency(msg, node);
+            responseBody = processEmergency(msg, node, hour);
         }
     }
     else if (method == "GET" && path == "/api/fleet") {
