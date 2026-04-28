@@ -40,9 +40,10 @@
   .status-dot { width:10px; height:10px; border-radius:50%; background:var(--green); box-shadow:0 0 10px rgba(16,185,129,0.5); animation:blink 2s infinite; }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
 
-  .workspace { display:grid; grid-template-columns:340px 1fr 300px; height:calc(100vh - 65px); }
+  .workspace { display:flex; height:calc(100vh - 65px); overflow: hidden; }
 
-  .panel { border-right:1px solid var(--border); overflow-y:auto; background:#ffffff; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
+  .panel { width: 340px; flex-shrink: 0; transition: margin-left 0.4s cubic-bezier(0.4, 0, 0.2, 1); border-right:1px solid var(--border); overflow-y:auto; background:#ffffff; scrollbar-width:thin; scrollbar-color:var(--border) transparent; position: relative; }
+  .panel.collapsed { margin-left: -340px; }
   .panel:last-child { border-right:none; }
   .ph { padding:16px 20px; font-family:var(--head); font-size:13px; font-weight:600; color:var(--text); background:var(--bg); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:8px; }
   .ph::before { content:''; width:4px; height:16px; background:var(--accent); border-radius:2px; flex-shrink:0; }
@@ -93,7 +94,10 @@
   .p3 { background:var(--green-light); color:var(--green); border:1px solid #a7f3d0; }
 
   /* main container */
-  .center-col { grid-column:2; display:flex; flex-direction:column; border-right:1px solid var(--border); background:#ffffff; position:relative; z-index:1; }
+  .center-col { flex: 1; min-width: 0; display:flex; flex-direction:column; border-right:1px solid var(--border); background:#ffffff; position:relative; z-index:1; }
+  .toggle-arrow { position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 24px; height: 48px; background: #ffffff; border: 1px solid var(--border); border-left: none; border-radius: 0 8px 8px 0; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 1000; color: var(--dim); box-shadow: 2px 0 8px rgba(0,0,0,0.05); transition: all 0.2s; font-size: 10px; opacity: 0; pointer-events: none; }
+  .panel.collapsed + .center-col .toggle-arrow { opacity: 1; pointer-events: all; }
+  .toggle-arrow:hover { color: var(--accent); background: var(--accent-light); }
   .map-wrap { flex:1.2; position:relative; z-index: 1; min-height: 400px; border-bottom:1px solid var(--border); }
   #map { display:block; width:100%; height:100%; background: #f8fafc; z-index: 1; }
   .leaflet-container { font-family: var(--body); }
@@ -188,7 +192,7 @@
 <div class="workspace">
 
   <!-- LEFT -->
-  <div class="panel">
+  <div class="panel" id="leftPanel">
     <div class="ph">INCIDENT DISPATCH</div>
     <div class="dispatch-inner">
 
@@ -244,11 +248,13 @@
 
       <button class="dispatch-btn" id="dispatchBtn" onclick="doDispatch()">▶ DISPATCH EMERGENCY</button>
       <div class="result-box" id="result"></div>
+      <button class="reset-btn" onclick="resetFleet()">↺ RESET ALL VEHICLES</button>
     </div>
   </div>
 
   <!-- CENTER -->
   <div class="center-col">
+    <div id="toggleArrow" class="toggle-arrow" onclick="toggleLeftPanel()">▶</div>
     <div class="map-wrap" id="mapWrap">
       <div id="map"></div>
 
@@ -261,16 +267,7 @@
         <option value="night">🌙 Night (2 AM - Clear)</option>
       </select>
 
-      <!-- Compass -->
-      <div class="hud compass-wrap">
-        <svg width="36" height="36" viewBox="0 0 36 36">
-          <circle cx="18" cy="18" r="17" fill="rgba(10,12,18,.85)" stroke="#1e2a40" stroke-width="1"/>
-          <polygon points="18,4 21,18 18,14 15,18" fill="#ff3355"/>
-          <polygon points="18,32 21,18 18,22 15,18" fill="#3a4a5a"/>
-          <text x="18" y="9.5" text-anchor="middle" font-size="6" fill="#ff5570" font-family="monospace" font-weight="bold">N</text>
-          <text x="18" y="30" text-anchor="middle" font-size="6" fill="#3a4a5a" font-family="monospace">S</text>
-        </svg>
-      </div>
+
 
       <!-- Zoom -->
       <div class="hud zoom-wrap" style="pointer-events:all;">
@@ -331,20 +328,7 @@
     </div>
   </div>
 
-  <!-- RIGHT -->
-  <div class="panel">
-    <div class="ph">FLEET STATUS</div>
-    <div class="fleet-inner">
-      <div class="stats-grid">
-        <div class="stat-card"><div class="stat-val" id="s-total">5</div><div class="stat-lbl">TOTAL</div></div>
-        <div class="stat-card"><div class="stat-val" id="s-ready" style="color:var(--green)">5</div><div class="stat-lbl">READY</div></div>
-        <div class="stat-card"><div class="stat-val" id="s-busy"  style="color:var(--red)">0</div><div class="stat-lbl">BUSY</div></div>
-        <div class="stat-card"><div class="stat-val" id="s-incidents" style="color:var(--amber)">0</div><div class="stat-lbl">INCIDENTS</div></div>
-      </div>
-      <div id="fleet-cards">Loading…</div>
-      <button class="reset-btn" onclick="resetFleet()">↺ RESET ALL VEHICLES</button>
-    </div>
-  </div>
+
 </div>
 
 <div id="toast"></div>
@@ -499,17 +483,18 @@ function updateMapHighlights() {
       altLineOptions: {
         styles: [{color: '#3a4a5a', opacity: 0.8, weight: 4}]
       },
-      show: true,
+      show: false,
       collapsible: true
     }).addTo(leafletMap);
     
     routingControl.on('routesfound', function(e) {
       const routes = e.routes;
       if (routes && routes.length > 0) {
-        const bestTime = routes[0].summary.totalTime / 60;
+        const tf = trafficFactor();
+        const bestTime = (routes[0].summary.totalTime / 60) * tf;
         let tbodyHtml = '';
         routes.forEach((route, idx) => {
-          const timeMin = route.summary.totalTime / 60;
+          const timeMin = (route.summary.totalTime / 60) * tf;
           const extraTime = timeMin - bestTime;
           
           let name = idx === 0 ? 'Primary Route' : 'Alternative ' + idx;
@@ -593,9 +578,9 @@ function getSimulatedHour() {
 // update traffic status
 function updateTraffic(){
   const h=getSimulatedHour(), b=document.getElementById('timeMode');
-  if((h>=8&&h<=10)||(h>=17&&h<=19)){
+  if((h>=8&&h<=11)||(h>=17&&h<=21)){
     b.className='hud traffic-badge tb-rush';
-  } else if(h>=22||h<=5){
+  } else if(h>=22||h<=7){
     b.className='hud traffic-badge tb-night';
   } else {
     b.className='hud traffic-badge tb-normal';
@@ -612,8 +597,10 @@ function onTimeModeChange() {
 
 function trafficFactor(){
   const h=getSimulatedHour();
-  if((h>=8&&h<=10)||(h>=17&&h<=19)) return 3.0;
-  if(h>=22||h<=5) return 0.8;
+  if(h>=8 && h<=11) return 2.5;
+  if(h>=12 && h<=16) return 1.5;
+  if(h>=17 && h<=21) return 3.5;
+  if(h>=22 || h<=7) return 0.8;
   return 1.0;
 }
 
@@ -723,6 +710,11 @@ async function doDispatch(){
     }
     refreshFleet(); refreshLog();
     toast('Emergency #'+data.id+' dispatched.');
+    const p = document.getElementById('leftPanel');
+    if (p && !p.classList.contains('collapsed')) {
+      p.classList.add('collapsed');
+      setTimeout(() => { if (leafletMap) leafletMap.invalidateSize(); }, 400);
+    }
   } catch(e){
     const r=document.getElementById('result');
     r.className='result-box show';
@@ -732,12 +724,20 @@ async function doDispatch(){
   }
 }
 
+function toggleLeftPanel() {
+  const p = document.getElementById('leftPanel');
+  if (p) {
+    p.classList.toggle('collapsed');
+    setTimeout(() => { if (leafletMap) leafletMap.invalidateSize(); }, 400);
+  }
+}
+
 function showResult(d, dName, vNumber, vPhone){
   const r=document.getElementById('result');
   const pc=d.priority===1?'p1':d.priority===2?'p2':'p3';
   const pl=d.priority===1?'CRITICAL':d.priority===2?'HIGH':'STANDARD';
   const tt=d.travelTime<0?'N/A':d.travelTime.toFixed(2)+' min';
-  const tf=(d.hour>=8&&d.hour<=10)||(d.hour>=17&&d.hour<=19)?'🔴 Rush Hour (3×)':d.hour>=22||d.hour<=5?'🟢 Night (0.8×)':'🟡 Normal (1×)';
+  const tf=(d.hour>=8&&d.hour<=11)?'🔴 Morning Rush (2.5×)':(d.hour>=12&&d.hour<=16)?'🟡 Afternoon (1.5×)':(d.hour>=17&&d.hour<=21)?'🔴 Evening Rush (3.5×)':'🟢 Night (0.8×)';
   
   let driverInfoHtml = '';
   if (d.vehicle && d.vehicle !== "None Available" && dName) {
@@ -766,43 +766,16 @@ async function refreshFleet(){
   try{
     const fleet=await (await fetch(BASE+'/api/fleet')).json();
     currentFleet = fleet;
-    const ready=fleet.filter(v=>v.available).length;
-    document.getElementById('s-total').textContent=fleet.length;
-    document.getElementById('s-ready').textContent=ready;
-    document.getElementById('s-busy').textContent=fleet.length-ready;
-    const icons={Ambulance:'🚑',FireTruck:'🚒',Police:'🚔'};
-    document.getElementById('fleet-cards').innerHTML=fleet.map(v=>`
-      <div class="vehicle-card ${v.available?'ready':'busy'}">
-        <div class="v-top">
-          <div class="v-name">${icons[v.type]||'🚗'} ${v.type}</div>
-          <div class="v-status ${v.available?'vs-ready':'vs-busy'}">${v.available?'READY':'BUSY'}</div>
-        </div>
-        <div class="v-id">UNIT #${v.id} • ${v.vehicleNumber||'N/A'}</div>
-        <button class="v-details-btn" onclick="toggleVDetails(${v.id}, this)">Show Details ▼</button>
-        <div class="v-details" id="vdet-${v.id}">
-          <div class="vd-row"><span class="vd-lbl">Driver:</span> ${v.driverName||'Unknown'}</div>
-          <div class="vd-row"><span class="vd-lbl">Phone:</span> ${v.phoneNumber||'N/A'}</div>
-        </div>
-      </div>`).join('');
   } catch(e){}
 }
 
-function toggleVDetails(id, btn) {
-  const el = document.getElementById('vdet-'+id);
-  if (el.classList.contains('open')) {
-    el.classList.remove('open');
-    btn.textContent = 'Show Details ▼';
-  } else {
-    el.classList.add('open');
-    btn.textContent = 'Hide Details ▲';
-  }
-}
+
 
 // Log
 async function refreshLog(){
   try{
     const log=await (await fetch(BASE+'/api/log')).json();
-    document.getElementById('s-incidents').textContent=log.length;
+    if(document.getElementById('s-incidents')) document.getElementById('s-incidents').textContent=log.length;
     if(!log.length){ document.getElementById('log-body').innerHTML='<div class="log-empty">No incidents recorded.</div>'; return; }
     const rows=[...log].reverse().map(e=>{
       const tt=e.travelTime<0?'N/A':e.travelTime.toFixed(1)+'m';

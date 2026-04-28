@@ -11,11 +11,19 @@ RoadGraph::RoadGraph(int n) : numNodes(n), nodes(n), adj(n) {}
 void RoadGraph::addEdge(int u, int v, double w) { adj[u].push_back({v,w}); adj[v].push_back({u,w}); }
 
 double RoadGraph::getTrafficFactor(int hour) {
-    if ((hour >= 8 && hour <= 10) || (hour >= 17 && hour <= 19)) {
-        cout << "  [TRAFFIC] RUSH HOUR! (3x Delay Applied)" << endl;
-        return 3.0;
+    if (hour >= 8 && hour <= 11) {
+        cout << "  [TRAFFIC] MORNING RUSH! (2.5x Delay Applied)" << endl;
+        return 2.5;
     }
-    if (hour >= 22 || hour <= 5) {
+    if (hour >= 12 && hour <= 16) {
+        cout << "  [TRAFFIC] AFTERNOON: Moderate (1.5x Delay Applied)" << endl;
+        return 1.5;
+    }
+    if (hour >= 17 && hour <= 21) {
+        cout << "  [TRAFFIC] EVENING RUSH! (3.5x Delay Applied)" << endl;
+        return 3.5;
+    }
+    if (hour >= 22 || hour <= 7) {
         cout << "  [TRAFFIC] NIGHT: Roads Clear (0.8x Speedup)" << endl;
         return 0.8;
     }
